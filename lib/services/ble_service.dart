@@ -208,11 +208,10 @@ Future<void> scanAndConnect() async {
     if (!isConnected) {
       return "Error: Not connected to any device.";
     }
-
     try {
       List<int> bytes = command.codeUnits;
       // write() ahora devuelve un Future<void>, no un Future<String>
-      await _commandCharacteristic!.write(bytes, withoutResponse: true);
+      await _commandCharacteristic!.write(bytes, withoutResponse: false);
       debugPrint("Command sent: $command");
       return "Command sent: $command";
     } catch (e) {
@@ -235,6 +234,7 @@ Future<void> scanAndConnect() async {
 
   // Enviar comando de calibración
   Future<String> calibrate() async {
+    debugPrint("Sending calibration command...");
     return await sendCommand("CALIBRATE");
   }
 

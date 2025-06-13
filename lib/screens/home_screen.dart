@@ -71,8 +71,11 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: 10),
                 ElevatedButton(
                   onPressed: bleService.isConnected
-                      ? () => bleService.calibrate()
-                      : null,
+                    ? () async {
+                      final result = await bleService.calibrate();
+                      debugPrint('calibrate() returned: $result');
+                    }
+                    : null,
                   child: const Text('Run Auto-Calibration'),
                 ),
                 const SizedBox(height: 10),
