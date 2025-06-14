@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/ble_service.dart';
 import '../models/drv2605_params.dart';
+import 'dart:developer' as developer; // Para debugPrint
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Usamos TextEditingController para poder limpiar el campo de entrada
+    final TextEditingController _readRegController = TextEditingController();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('DRV2605L BLE Control'),
@@ -52,41 +56,103 @@ class HomeScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        Text('Latest Response from ESP32: ${bleService.latestResponse}',
+                        // Aquí mostramos la última respuesta de BLE
+                        Text('Latest Raw Response from ESP32: ${bleService.latestResponse}',
                             style: const TextStyle(fontStyle: FontStyle.italic)),
                       ],
                     ),
                   ),
                 ),
 
-                // Controles del DRV2605L
+                // --- Lectura de Registros (MOVEMOS ESTA SECCIÓN AQUÍ) ---
+                _buildRegisterSection(
+                  title: 'Read Specific Register (Hex Address)',
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _readRegController, // Usar el controlador
+                            decoration: const InputDecoration(labelText: 'Register Address (e.g., 0x00)'),
+                            keyboardType: TextInputType.text, // Puede ser numérico o texto para '0x'
+                            onSubmitted: (value) async {
+                              final int? regAddr = int.tryParse(value.startsWith('0x') ? value.substring(2) : value, radix: 16);
+                              if (regAddr != null && bleService.isConnected) {
+                                final result = await bleService.readRegister(regAddr);
+                                developer.log('Read Register command sent: $result'); // Usar developer.log
+                                // Limpiar el campo después de enviar el comando
+                                _readRegController.clear();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Invalid register address or not connected.'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton(
+                          onPressed: bleService.isConnected
+                              ? () async {
+                                  // Asume que 0x00 es el registro de estado por defecto para un botón de "lectura rápida"
+                                  final result = await bleService.readRegister(0x00);
+                                  developer.log('Read Status command sent: $result'); // Usar developer.log
+                                }
+                              : null,
+                          child: const Text('Read Status (0x00)'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Mostrar el resultado interpretado del registro
+                    Text('Interpreted Register Result: ${drvParams.interpretedRegisterResult}',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+
+                // Controles del DRV2605L (el resto se mantiene igual)
                 _buildDRV2605Controls(context, bleService, drvParams),
                 const SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: bleService.isConnected
-                      ? () => drvParams.devReset = true // Actualiza el modelo para que el botón de aplicar lo use
+                      ? () async {
+                          // Al hacer clic en "Apply All Parameters", también se enviarán los datos del DEV_RESET si está marcado
+                          await bleService.applyDRV2605Params(drvParams);
+                          if (drvParams.devReset) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Device Reset bit set. Restarting DRV2605.')),
+                            );
+                            // También puedes añadir una pequeña pausa o una confirmación visual
+                            // drvParams.updateParam('devReset', false); // Limpiar el checkbox después de aplicar
+                          }
+                        }
                       : null,
-                  child: const Text('Apply All Parameters & Reset (if Dev_Reset)'),
+                  child: const Text('Apply All Parameters'),
                 ),
                 const SizedBox(height: 10),
                 ElevatedButton(
                   onPressed: bleService.isConnected
-                    ? () async {
-                      final result = await bleService.calibrate();
-                      debugPrint('calibrate() returned: $result');
-                    }
-                    : null,
+                      ? () async {
+                          final result = await bleService.calibrate();
+                          developer.log('calibrate() returned: $result');
+                        }
+                      : null,
                   child: const Text('Run Auto-Calibration'),
                 ),
                 const SizedBox(height: 10),
-                 ElevatedButton(
+                ElevatedButton(
                   onPressed: bleService.isConnected
                       ? () => bleService.motorSetActive()
                       : null,
                   child: const Text('Set Motor Active Mode'),
                 ),
                 const SizedBox(height: 10),
-                 ElevatedButton(
+                ElevatedButton(
                   onPressed: bleService.isConnected
                       ? () => bleService.motorSetOff()
                       : null,
@@ -406,40 +472,6 @@ class HomeScreen extends StatelessWidget {
                   ? () => bleService.writeRegister(0x17, drvParams.odClamp)
                   : null,
               child: const Text('Apply OD Clamp (0x17)'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-
-        // --- Lectura de Registros ---
-        _buildRegisterSection(
-          title: 'Read Specific Register (Hex Address)',
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: TextEditingController(),
-                    decoration: const InputDecoration(labelText: 'Register Address (e.g., 0x00 for Status)'),
-                    onSubmitted: (value) {
-                      final int? regAddr = int.tryParse(value.startsWith('0x') ? value.substring(2) : value, radix: 16);
-                      if (regAddr != null && bleService.isConnected) {
-                        bleService.readRegister(regAddr);
-                      } else {
-                        // Anteriormente: bleService.updateConnectionStatus("Invalid address or not connected.");
-                        // Ahora, podemos mostrar un SnackBar o simplemente logear.
-                        // Para que el usuario lo vea, un SnackBar es buena idea.
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Invalid register address or not connected to a device.'),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                ),
-              ],
             ),
           ],
         ),

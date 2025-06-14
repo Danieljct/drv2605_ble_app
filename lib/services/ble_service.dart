@@ -174,6 +174,35 @@ Future<void> scanAndConnect() async {
                 _updateConnectionStatus("Response notifications enabled.");
               }
             }
+            if (characteristic.properties.notify) {
+                await characteristic.setNotifyValue(true);
+                characteristic.lastValueStream.listen((value) {
+                  String response = String.fromCharCodes(value);
+                  _updateLatestResponse("ESP32: $response");
+                  debugPrint("Received from ESP32: $response");
+
+                  // *************** NUEVO: Procesar la respuesta del registro aquí ***************
+                  // Suponiendo que la respuesta es del tipo "READ_OK <reg_addr_hex>:<value_hex>"
+                  final RegExp regExp = RegExp(r'READ_OK ([0-9A-Fa-f]+):([0-9A-Fa-f]+)');
+                  final match = regExp.firstMatch(response);
+
+                  if (match != null && match.groupCount == 2) {
+                    final int? regAddr = int.tryParse(match.group(1)!, radix: 16);
+                    final int? regValue = int.tryParse(match.group(2)!, radix: 16);
+                    if (regAddr != null && regValue != null) {
+                      // No podemos llamar directamente a drvParams.interpretAndApplyRegister aquí
+                      // porque BleService no tiene acceso directo a la instancia de DRV2605Params.
+                      // La UI (HomeScreen) tendrá que escuchar 'latestResponse' y hacer la interpretación.
+                      // Podríamos emitir un Stream aquí, pero para mantenerlo simple por ahora,
+                      // la UI lo extraerá de latestResponse.
+                      debugPrint("Parsed Register Read: Addr=0x${regAddr.toRadixString(16)}, Value=0x${regValue.toRadixString(16)}");
+                    }
+                  }
+                  // ******************************************************************************
+                });
+                _updateConnectionStatus("Response notifications enabled.");
+              }
+
           }
           if (_commandCharacteristic != null && _responseCharacteristic != null) {
             _updateConnectionStatus("Ready to send commands.");
